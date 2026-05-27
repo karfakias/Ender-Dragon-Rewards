@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "com.enderdragon.rewards.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "EnderDragonEntityMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

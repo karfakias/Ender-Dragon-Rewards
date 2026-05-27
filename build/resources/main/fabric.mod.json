@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "dragonrewards",
+  "version": "1.21.11",
+  "name": "Dragon Rewards",
+  "description": "Adaptive, secure Ender Dragon reward chests with progressive drop chances.",
+  "authors": ["Codex"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "com.enderdragon.rewards.DragonRewardsMod"
+    ]
+  },
+  "mixins": [
+    "dragonrewards.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric": "*",
+    "minecraft": "1.21.11"
+  }
+}
