@@ -20,5 +20,9 @@
     "fabricloader": ">=0.15.0",
     "fabric": "*",
     "minecraft": "1.21.11"
+  },
+  "suggests": {
+    "discord-mc-chat": "*",
+    "discord_mc_chat": "*"
   }
 }

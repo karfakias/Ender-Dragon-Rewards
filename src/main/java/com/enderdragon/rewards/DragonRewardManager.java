@@ -123,7 +123,7 @@ public final class DragonRewardManager {
             queueDelayedChestSpawn(world, state, owner, rewards);
         }
 
-        broadcastOutcome(world.getServer(), owner.playerName(), rolledElytra, rolledHead);
+        broadcastOutcome(world.getServer(), owner.playerName(), rolledElytra, rolledHead, state);
     }
 
     private static void createRewardChest(ServerWorld world, RewardState state, BlockPos chestPos, OwnerData owner, List<ItemStack> rewards) {
@@ -282,7 +282,7 @@ public final class DragonRewardManager {
         return new OwnerData(uuid, name);
     }
 
-    private static void broadcastOutcome(MinecraftServer server, String playerName, boolean elytra, boolean dragonHead) {
+    private static void broadcastOutcome(MinecraftServer server, String playerName, boolean elytra, boolean dragonHead, RewardState state) {
         String template;
         DragonRewardsText.OutcomeType type;
         if (elytra && dragonHead) {
@@ -300,7 +300,13 @@ public final class DragonRewardManager {
         }
 
         String rendered = template.replace("{player}", playerName);
-        broadcastOutcomeThroughTellraw(server, rendered, type);
+        DiscordRewardEmbedSender.Result embedResult = DiscordRewardEmbedSender.send(playerName, type, elytra, dragonHead);
+        if (embedResult == DiscordRewardEmbedSender.Result.UNAVAILABLE) {
+            broadcastOutcomeThroughTellraw(server, rendered, type);
+            return;
+        }
+
+        server.getPlayerManager().broadcast(DragonRewardsText.outcome(rendered, type), false);
     }
 
     private static void broadcastOutcomeThroughTellraw(MinecraftServer server, String message, DragonRewardsText.OutcomeType type) {
