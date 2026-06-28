@@ -1,48 +1,48 @@
 package com.enderdragon.rewards;
 
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 
 public final class DragonRewardsText {
     private DragonRewardsText() {
     }
 
-    public static MutableText commandLine(String message) {
-        return Text.empty()
-            .append(Text.literal("◆ ").formatted(Formatting.DARK_PURPLE, Formatting.BOLD))
-            .append(Text.literal("Dragon Rewards").formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD))
-            .append(Text.literal(" » ").formatted(Formatting.DARK_GRAY))
-            .append(Text.literal(message).formatted(Formatting.GRAY));
+    public static MutableComponent commandLine(String message) {
+        return Component.empty()
+            .append(Component.literal("◆ ").withStyle(ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD))
+            .append(Component.literal("Dragon Rewards").withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD))
+            .append(Component.literal(" » ").withStyle(ChatFormatting.DARK_GRAY))
+            .append(Component.literal(message).withStyle(ChatFormatting.GRAY));
     }
 
-    public static MutableText unauthorized(String ownerName) {
+    public static MutableComponent unauthorized(String ownerName) {
         String raw = DragonRewardsMod.CONFIG.messages.unauthorizedChest.replace("{player}", ownerName);
-        return Text.empty()
-            .append(Text.literal("✖ ").formatted(Formatting.RED, Formatting.BOLD))
-            .append(Text.literal(raw).formatted(Formatting.RED));
+        return Component.empty()
+            .append(Component.literal("✖ ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD))
+            .append(Component.literal(raw).withStyle(ChatFormatting.RED));
     }
 
-    public static MutableText outcome(String message, OutcomeType type) {
-        return Text.empty()
-            .append(Text.literal(type.symbol + " ").formatted(type.prefixColor, Formatting.BOLD))
-            .append(Text.literal("Dragon Rewards").formatted(type.prefixColor, Formatting.BOLD))
-            .append(Text.literal(" » ").formatted(Formatting.DARK_GRAY))
-            .append(Text.literal(message).formatted(type.messageColor));
+    public static MutableComponent outcome(String message, OutcomeType type) {
+        return Component.empty()
+            .append(Component.literal(type.symbol + " ").withStyle(type.prefixColor, ChatFormatting.BOLD))
+            .append(Component.literal("Dragon Rewards").withStyle(type.prefixColor, ChatFormatting.BOLD))
+            .append(Component.literal(" » ").withStyle(ChatFormatting.DARK_GRAY))
+            .append(Component.literal(message).withStyle(type.messageColor));
     }
 
-    public static Text chestTitle(String ownerName) {
-        return Text.empty()
-            .append(Text.literal("✦ ").formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD))
-            .append(Text.literal(ownerName + "'s Rewards").formatted(Formatting.AQUA, Formatting.BOLD));
+    public static Component chestTitle(String ownerName) {
+        return Component.empty()
+            .append(Component.literal("✦ ").withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD))
+            .append(Component.literal(ownerName + "'s Rewards").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
     }
 
-    public static Text chestTitleWithTimer(String ownerName, long remainingTicks) {
-        return Text.empty()
-            .append(Text.literal("✦ ").formatted(Formatting.LIGHT_PURPLE, Formatting.BOLD))
-            .append(Text.literal(ownerName + "'s Rewards").formatted(Formatting.AQUA, Formatting.BOLD))
-            .append(Text.literal(" • ").formatted(Formatting.DARK_GRAY))
-            .append(Text.literal(formatRemaining(remainingTicks)).formatted(Formatting.GOLD, Formatting.BOLD));
+    public static Component chestTitleWithTimer(String ownerName, long remainingTicks) {
+        return Component.empty()
+            .append(Component.literal("✦ ").withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD))
+            .append(Component.literal(ownerName + "'s Rewards").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD))
+            .append(Component.literal(" • ").withStyle(ChatFormatting.DARK_GRAY))
+            .append(Component.literal(formatRemaining(remainingTicks)).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
     }
 
     public static String formatRemaining(long remainingTicks) {
@@ -54,16 +54,16 @@ public final class DragonRewardsText {
     }
 
     public enum OutcomeType {
-        NOTHING("☘", Formatting.GREEN, Formatting.YELLOW),
-        ELYTRA("✈", Formatting.AQUA, Formatting.AQUA),
-        DRAGON_HEAD("☠", Formatting.DARK_PURPLE, Formatting.LIGHT_PURPLE),
-        BOTH("✦", Formatting.GOLD, Formatting.GOLD);
+        NOTHING("☘", ChatFormatting.GREEN, ChatFormatting.YELLOW),
+        ELYTRA("✈", ChatFormatting.AQUA, ChatFormatting.AQUA),
+        DRAGON_HEAD("☠", ChatFormatting.DARK_PURPLE, ChatFormatting.LIGHT_PURPLE),
+        BOTH("✦", ChatFormatting.GOLD, ChatFormatting.GOLD);
 
         final String symbol;
-        final Formatting prefixColor;
-        final Formatting messageColor;
+        final ChatFormatting prefixColor;
+        final ChatFormatting messageColor;
 
-        OutcomeType(String symbol, Formatting prefixColor, Formatting messageColor) {
+        OutcomeType(String symbol, ChatFormatting prefixColor, ChatFormatting messageColor) {
             this.symbol = symbol;
             this.prefixColor = prefixColor;
             this.messageColor = messageColor;

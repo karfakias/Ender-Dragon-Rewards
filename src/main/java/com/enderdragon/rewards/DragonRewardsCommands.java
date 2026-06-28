@@ -5,21 +5,20 @@ import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.PlayerConfigEntry;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
-
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.NameAndId;
+import net.minecraft.world.level.Level;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ThreadLocalRandom;
 
-import static net.minecraft.server.command.CommandManager.argument;
-import static net.minecraft.server.command.CommandManager.literal;
+import static net.minecraft.commands.Commands.argument;
+import static net.minecraft.commands.Commands.literal;
 
 public final class DragonRewardsCommands {
     private DragonRewardsCommands() {
@@ -81,7 +80,7 @@ public final class DragonRewardsCommands {
                                 .then(argument("z", IntegerArgumentType.integer())
                                     .executes(DragonRewardsCommands::removeChestAt)))))
                     .then(literal("spawn")
-                        .then(CommandManager.argument("player", net.minecraft.command.argument.EntityArgumentType.player())
+                        .then(Commands.argument("player", net.minecraft.commands.arguments.EntityArgument.player())
                             .then(argument("elytra", BoolArgumentType.bool())
                                 .then(argument("dragon_head", BoolArgumentType.bool())
                                     .executes(DragonRewardsCommands::spawnChest))))))
@@ -91,27 +90,27 @@ public final class DragonRewardsCommands {
         );
     }
 
-    private static boolean hasAdminPermission(ServerCommandSource source) {
-        if (!source.isExecutedByPlayer()) {
+    private static boolean hasAdminPermission(CommandSourceStack source) {
+        if (!source.isPlayer()) {
             return true;
         }
-        ServerPlayerEntity player = source.getPlayer();
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
             return false;
         }
-        return source.getServer().getPlayerManager().isOperator(new PlayerConfigEntry(player.getGameProfile()));
+        return source.getServer().getPlayerList().isOp(new NameAndId(player.getGameProfile()));
     }
 
-    private static boolean ensureAdmin(ServerCommandSource source) {
+    private static boolean ensureAdmin(CommandSourceStack source) {
         if (hasAdminPermission(source)) {
             return true;
         }
-        source.sendError(Text.literal("You must be an operator to use /dragonrewards."));
+        source.sendFailure(Component.literal("You must be an operator to use /dragonrewards."));
         return false;
     }
 
-    private static int help(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource src = ctx.getSource();
+    private static int help(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
         if (!ensureAdmin(src)) {
             return 0;
         }
@@ -138,8 +137,8 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int status(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource src = ctx.getSource();
+    private static int status(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
         if (!ensureAdmin(src)) {
             return 0;
         }
@@ -151,7 +150,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int reloadConfig(CommandContext<ServerCommandSource> ctx) {
+    private static int reloadConfig(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -161,7 +160,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int saveConfig(CommandContext<ServerCommandSource> ctx) {
+    private static int saveConfig(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -170,7 +169,7 @@ public final class DragonRewardsCommands {
         return ok ? 1 : 0;
     }
 
-    private static int setDebug(CommandContext<ServerCommandSource> ctx) {
+    private static int setDebug(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -180,7 +179,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int setFeature(CommandContext<ServerCommandSource> ctx, boolean elytra) {
+    private static int setFeature(CommandContext<CommandSourceStack> ctx, boolean elytra) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -194,14 +193,14 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int chanceGet(CommandContext<ServerCommandSource> ctx) {
+    private static int chanceGet(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
         return status(ctx);
     }
 
-    private static int chanceReset(CommandContext<ServerCommandSource> ctx, boolean resetElytra, boolean resetHead) {
+    private static int chanceReset(CommandContext<CommandSourceStack> ctx, boolean resetElytra, boolean resetHead) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -216,7 +215,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int chanceSet(CommandContext<ServerCommandSource> ctx, boolean elytra) {
+    private static int chanceSet(CommandContext<CommandSourceStack> ctx, boolean elytra) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -232,7 +231,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int chanceAdd(CommandContext<ServerCommandSource> ctx, boolean elytra) {
+    private static int chanceAdd(CommandContext<CommandSourceStack> ctx, boolean elytra) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -248,7 +247,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int simulate(CommandContext<ServerCommandSource> ctx) {
+    private static int simulate(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -285,8 +284,8 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int listChests(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource src = ctx.getSource();
+    private static int listChests(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
         if (!ensureAdmin(src)) {
             return 0;
         }
@@ -300,7 +299,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int cleanupChests(CommandContext<ServerCommandSource> ctx) {
+    private static int cleanupChests(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -309,11 +308,11 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int clearChests(CommandContext<ServerCommandSource> ctx) {
+    private static int clearChests(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
-        ServerWorld end = getEndWorld(ctx.getSource());
+        ServerLevel end = getEndWorld(ctx.getSource());
         if (end == null) {
             send(ctx.getSource(), "The End is not loaded.");
             return 0;
@@ -323,7 +322,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int setChestTime(CommandContext<ServerCommandSource> ctx) {
+    private static int setChestTime(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -333,7 +332,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int setChestDelay(CommandContext<ServerCommandSource> ctx) {
+    private static int setChestDelay(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -343,11 +342,11 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int removeChestAt(CommandContext<ServerCommandSource> ctx) {
+    private static int removeChestAt(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
-        ServerWorld end = getEndWorld(ctx.getSource());
+        ServerLevel end = getEndWorld(ctx.getSource());
         if (end == null) {
             send(ctx.getSource(), "The End is not loaded.");
             return 0;
@@ -362,17 +361,17 @@ public final class DragonRewardsCommands {
         return removed ? 1 : 0;
     }
 
-    private static int spawnChest(CommandContext<ServerCommandSource> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+    private static int spawnChest(CommandContext<CommandSourceStack> ctx) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
-        ServerWorld end = getEndWorld(ctx.getSource());
+        ServerLevel end = getEndWorld(ctx.getSource());
         if (end == null) {
             send(ctx.getSource(), "The End is not loaded.");
             return 0;
         }
 
-        ServerPlayerEntity player = net.minecraft.command.argument.EntityArgumentType.getPlayer(ctx, "player");
+        ServerPlayer player = net.minecraft.commands.arguments.EntityArgument.getPlayer(ctx, "player");
         boolean elytra = BoolArgumentType.getBool(ctx, "elytra");
         boolean head = BoolArgumentType.getBool(ctx, "dragon_head");
 
@@ -386,7 +385,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int processedCount(CommandContext<ServerCommandSource> ctx) {
+    private static int processedCount(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -395,7 +394,7 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static int clearProcessed(CommandContext<ServerCommandSource> ctx) {
+    private static int clearProcessed(CommandContext<CommandSourceStack> ctx) {
         if (!ensureAdmin(ctx.getSource())) {
             return 0;
         }
@@ -405,15 +404,15 @@ public final class DragonRewardsCommands {
         return 1;
     }
 
-    private static ServerWorld getEndWorld(ServerCommandSource source) {
-        return source.getServer().getWorld(World.END);
+    private static ServerLevel getEndWorld(CommandSourceStack source) {
+        return source.getServer().getLevel(Level.END);
     }
 
     private static String pct(double chance) {
         return String.format(Locale.ROOT, "%.2f%%", chance * 100.0);
     }
 
-    private static void send(ServerCommandSource source, String message) {
-        source.sendFeedback(() -> DragonRewardsText.commandLine(message), false);
+    private static void send(CommandSourceStack source, String message) {
+        source.sendSuccess(() -> DragonRewardsText.commandLine(message), false);
     }
 }

@@ -1,7 +1,7 @@
 package com.enderdragon.rewards;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 
 public final class ModBlocks {
     private ModBlocks() {

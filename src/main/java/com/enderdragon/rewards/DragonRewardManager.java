@@ -7,39 +7,36 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.SpawnReason;
-import net.minecraft.entity.boss.dragon.EnderDragonEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.inventory.SimpleInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
-
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -55,11 +52,11 @@ public final class DragonRewardManager {
         ServerLivingEntityEvents.AFTER_DEATH.register(DragonRewardManager::onEntityDeath);
 
         PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
-            if (world.isClient()) {
+            if (world.isClientSide()) {
                 return true;
             }
-            if (isManagedRewardChest((ServerWorld) world, pos)) {
-                player.sendMessage(DragonRewardsText.commandLine("Reward chests cannot be broken."), false);
+            if (isManagedRewardChest((ServerLevel) world, pos)) {
+                ((ServerPlayer) player).sendSystemMessage(DragonRewardsText.commandLine("Reward chests cannot be broken."), false);
                 return false;
             }
             return true;
@@ -72,15 +69,15 @@ public final class DragonRewardManager {
     }
 
     private static void onEntityDeath(LivingEntity entity, DamageSource damageSource) {
-        if (!(entity instanceof EnderDragonEntity dragon)) {
+        if (!(entity instanceof EnderDragon dragon)) {
             return;
         }
-        if (!(entity.getEntityWorld() instanceof ServerWorld world) || world.getRegistryKey() != World.END) {
+        if (!(entity.level() instanceof ServerLevel world) || world.dimension() != Level.END) {
             return;
         }
 
         RewardState state = RewardState.get(world.getServer());
-        UUID dragonUuid = dragon.getUuid();
+        UUID dragonUuid = dragon.getUUID();
         if (state.isDragonProcessed(dragonUuid)) {
             debug(world.getServer(), "Skipped duplicate dragon death event for " + dragonUuid);
             return;
@@ -94,7 +91,7 @@ public final class DragonRewardManager {
         List<ItemStack> rewards = new ArrayList<>();
 
         if (DragonRewardsMod.CONFIG.enableElytraDrops) {
-            rolledElytra = world.random.nextDouble() < state.getCurrentElytraChance();
+            rolledElytra = world.getRandom().nextDouble() < state.getCurrentElytraChance();
             if (rolledElytra) {
                 rewards.add(new ItemStack(Items.ELYTRA));
                 state.setCurrentElytraChance(DragonRewardsMod.CONFIG.elytraBaseChance);
@@ -107,7 +104,7 @@ public final class DragonRewardManager {
         }
 
         if (DragonRewardsMod.CONFIG.enableDragonHeadDrops) {
-            rolledHead = world.random.nextDouble() < state.getCurrentDragonHeadChance();
+            rolledHead = world.getRandom().nextDouble() < state.getCurrentDragonHeadChance();
             if (rolledHead) {
                 rewards.add(new ItemStack(Items.DRAGON_HEAD));
                 state.setCurrentDragonHeadChance(DragonRewardsMod.CONFIG.dragonHeadBaseChance);
@@ -126,12 +123,12 @@ public final class DragonRewardManager {
         broadcastOutcome(world.getServer(), owner.playerName(), rolledElytra, rolledHead, state);
     }
 
-    private static void createRewardChest(ServerWorld world, RewardState state, BlockPos chestPos, OwnerData owner, List<ItemStack> rewards) {
-        world.setBlockState(chestPos, Blocks.CHEST.getDefaultState(), Block.NOTIFY_ALL);
+    private static void createRewardChest(ServerLevel world, RewardState state, BlockPos chestPos, OwnerData owner, List<ItemStack> rewards) {
+        world.setBlock(chestPos, Blocks.CHEST.defaultBlockState(), Block.UPDATE_ALL);
         clearVanillaChestInventory(world, chestPos);
 
-        long expiresAtTick = world.getTime() + (DragonRewardsMod.CONFIG.rewardClaimTimeMinutes * TICKS_PER_MINUTE);
-        UUID markerUuid = spawnNameMarker(world, chestPos, owner.playerName(), expiresAtTick - world.getTime());
+        long expiresAtTick = world.getGameTime() + (DragonRewardsMod.CONFIG.rewardClaimTimeMinutes * TICKS_PER_MINUTE);
+        UUID markerUuid = spawnNameMarker(world, chestPos, owner.playerName(), expiresAtTick - world.getGameTime());
         List<ItemStack> rewardCopies = new ArrayList<>();
         for (ItemStack stack : rewards) {
             if (!stack.isEmpty()) {
@@ -145,9 +142,9 @@ public final class DragonRewardManager {
         ownerNotifyChest(world, owner, chestPos, minutes);
     }
 
-    private static void queueDelayedChestSpawn(ServerWorld world, RewardState state, OwnerData owner, List<ItemStack> rewards) {
+    private static void queueDelayedChestSpawn(ServerLevel world, RewardState state, OwnerData owner, List<ItemStack> rewards) {
         long delayTicks = DragonRewardsMod.CONFIG.rewardSpawnDelaySeconds * 20L;
-        long executeAt = world.getServer().getWorld(World.OVERWORLD).getTime() + delayTicks;
+        long executeAt = world.getServer().getLevel(Level.OVERWORLD).getGameTime() + delayTicks;
         List<ItemStack> copies = new ArrayList<>();
         for (ItemStack stack : rewards) {
             if (!stack.isEmpty()) {
@@ -157,7 +154,7 @@ public final class DragonRewardManager {
         state.addPendingSpawn(new PendingRewardSpawn(owner.playerUuid(), owner.playerName(), copies, executeAt));
     }
 
-    public static BlockPos spawnManualRewardChest(ServerWorld world, ServerPlayerEntity owner, boolean includeElytra, boolean includeDragonHead) {
+    public static BlockPos spawnManualRewardChest(ServerLevel world, ServerPlayer owner, boolean includeElytra, boolean includeDragonHead) {
         if (!includeElytra && !includeDragonHead) {
             return null;
         }
@@ -172,12 +169,12 @@ public final class DragonRewardManager {
             rewards.add(new ItemStack(Items.DRAGON_HEAD));
         }
 
-        OwnerData ownerData = new OwnerData(owner.getUuid(), owner.getName().getString());
+        OwnerData ownerData = new OwnerData(owner.getUUID(), owner.getName().getString());
         createRewardChest(world, state, chestPos, ownerData, rewards);
         return chestPos;
     }
 
-    public static boolean removeManagedChest(ServerWorld world, BlockPos pos) {
+    public static boolean removeManagedChest(ServerLevel world, BlockPos pos) {
         RewardState state = RewardState.get(world.getServer());
         Optional<ActiveRewardChest> chest = state.getActiveChests().stream()
             .filter(active -> active.chestPos().equals(pos))
@@ -191,7 +188,7 @@ public final class DragonRewardManager {
         return true;
     }
 
-    public static int removeAllManagedChests(ServerWorld world) {
+    public static int removeAllManagedChests(ServerLevel world) {
         RewardState state = RewardState.get(world.getServer());
         List<ActiveRewardChest> snapshot = new ArrayList<>(state.getActiveChests());
         for (ActiveRewardChest chest : snapshot) {
@@ -200,10 +197,10 @@ public final class DragonRewardManager {
         return snapshot.size();
     }
 
-    public static void onRewardChestEmptied(ServerWorld world, BlockPos pos) {
+    public static void onRewardChestEmptied(ServerLevel world, BlockPos pos) {
         RewardState state = RewardState.get(world.getServer());
-        ServerWorld resolvedRewardWorld = getRewardWorld(world.getServer());
-        ServerWorld rewardWorld = resolvedRewardWorld == null ? world : resolvedRewardWorld;
+        ServerLevel resolvedRewardWorld = getRewardWorld(world.getServer());
+        ServerLevel rewardWorld = resolvedRewardWorld == null ? world : resolvedRewardWorld;
         Optional<ActiveRewardChest> chest = state.getActiveChests().stream()
             .filter(active -> active.chestPos().equals(pos))
             .findFirst();
@@ -215,7 +212,7 @@ public final class DragonRewardManager {
     }
 
     public static void reconcilePersistentChests(MinecraftServer server) {
-        ServerWorld end = server.getWorld(World.END);
+        ServerLevel end = server.getLevel(Level.END);
         if (end == null) {
             return;
         }
@@ -227,7 +224,7 @@ public final class DragonRewardManager {
         for (ActiveRewardChest chest : snapshot) {
             BlockPos pos = chest.chestPos();
             BlockState blockState = end.getBlockState(pos);
-            if (!blockState.isOf(Blocks.CHEST)) {
+            if (!blockState.is(Blocks.CHEST)) {
                 removeMarker(end, chest.markerUuid(), pos);
                 state.removeChestAt(pos);
                 continue;
@@ -235,17 +232,17 @@ public final class DragonRewardManager {
             clearVanillaChestInventory(end, pos);
 
             Entity marker = chest.markerUuid() == null ? null : end.getEntity(chest.markerUuid());
-            if (marker instanceof ArmorStandEntity armorStand) {
+            if (marker instanceof ArmorStand armorStand) {
                 tagRewardMarker(armorStand);
             } else {
-                UUID newMarker = spawnNameMarker(end, pos, chest.ownerName(), chest.expiresAtTick() - end.getTime());
+                UUID newMarker = spawnNameMarker(end, pos, chest.ownerName(), chest.expiresAtTick() - end.getGameTime());
                 state.updateChest(chest.withMarker(newMarker));
             }
         }
         cleanupOrphanRewardMarkers(end, state);
     }
 
-    private static OwnerData resolveOwnerData(EnderDragonEntity dragon, DamageSource source, ServerWorld world) {
+    private static OwnerData resolveOwnerData(EnderDragon dragon, DamageSource source, ServerLevel world) {
         UUID uuid = null;
         String name = "Unknown";
 
@@ -258,19 +255,19 @@ public final class DragonRewardManager {
         }
 
         if (uuid == null) {
-            Entity attacker = source.getAttacker();
-            if (attacker instanceof ServerPlayerEntity serverPlayer) {
-                uuid = serverPlayer.getUuid();
+            Entity attacker = source.getEntity();
+            if (attacker instanceof ServerPlayer serverPlayer) {
+                uuid = serverPlayer.getUUID();
                 name = serverPlayer.getName().getString();
             }
         }
 
         if (uuid == null) {
-            ServerPlayerEntity fallback = world.getPlayers().stream()
-                .min((a, b) -> Double.compare(a.squaredDistanceTo(dragon), b.squaredDistanceTo(dragon)))
+            ServerPlayer fallback = world.players().stream()
+                .min((a, b) -> Double.compare(a.distanceToSqr(dragon), b.distanceToSqr(dragon)))
                 .orElse(null);
             if (fallback != null) {
-                uuid = fallback.getUuid();
+                uuid = fallback.getUUID();
                 name = fallback.getName().getString();
             }
         }
@@ -306,7 +303,7 @@ public final class DragonRewardManager {
             return;
         }
 
-        server.getPlayerManager().broadcast(DragonRewardsText.outcome(rendered, type), false);
+        server.getPlayerList().broadcastSystemMessage(DragonRewardsText.outcome(rendered, type), false);
     }
 
     private static void broadcastOutcomeThroughTellraw(MinecraftServer server, String message, DragonRewardsText.OutcomeType type) {
@@ -314,30 +311,30 @@ public final class DragonRewardManager {
         JsonArray extra = new JsonArray();
         extra.add(tellrawSegment(type.symbol + " ", type.prefixColor, true));
         extra.add(tellrawSegment("Dragon Rewards", type.prefixColor, true));
-        extra.add(tellrawSegment(" \u00BB ", Formatting.DARK_GRAY, false));
+        extra.add(tellrawSegment(" \u00BB ", ChatFormatting.DARK_GRAY, false));
         extra.add(tellrawSegment(message, type.messageColor, false));
         root.addProperty("text", "");
         root.add("extra", extra);
 
         try {
-            server.getCommandManager().parseAndExecute(server.getCommandSource().withSilent(), "tellraw @a " + root);
+            server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), "tellraw @a " + root);
         } catch (Exception ex) {
             DragonRewardsMod.LOGGER.warn("Failed to announce reward outcome through tellraw; falling back to direct broadcast.", ex);
-            server.getPlayerManager().broadcast(DragonRewardsText.outcome(message, type), false);
+            server.getPlayerList().broadcastSystemMessage(DragonRewardsText.outcome(message, type), false);
         }
     }
 
-    private static JsonObject tellrawSegment(String text, Formatting color, boolean bold) {
+    private static JsonObject tellrawSegment(String text, ChatFormatting color, boolean bold) {
         JsonObject segment = new JsonObject();
         segment.addProperty("text", text);
-        segment.addProperty("color", color.getName());
+        segment.addProperty("color", color.name().toLowerCase(Locale.ROOT));
         if (bold) {
             segment.addProperty("bold", true);
         }
         return segment;
     }
 
-    private static BlockPos findChestSpawnPosition(ServerWorld world, RewardState state) {
+    private static BlockPos findChestSpawnPosition(ServerLevel world, RewardState state) {
         int centerX = DragonRewardsMod.CONFIG.chestSpawnCenterX;
         int centerZ = DragonRewardsMod.CONFIG.chestSpawnCenterZ;
         int fixedY = DragonRewardsMod.CONFIG.chestSpawnFixedY;
@@ -379,63 +376,63 @@ public final class DragonRewardManager {
         return new BlockPos(centerX, fixedY, centerZ);
     }
 
-    private static boolean isValidChestSpot(ServerWorld world, BlockPos pos) {
+    private static boolean isValidChestSpot(ServerLevel world, BlockPos pos) {
         return world.getBlockState(pos).isAir()
-            && world.getBlockState(pos.up()).isAir()
-            && world.getBlockState(pos.down()).isSolidBlock(world, pos.down());
+            && world.getBlockState(pos.above()).isAir()
+            && world.getBlockState(pos.below()).isRedstoneConductor(world, pos.below());
     }
 
-    private static ActionResult onUseBlock(PlayerEntity player, World world, Hand hand, BlockHitResult hitResult) {
-        if (world.isClient() || hand != Hand.MAIN_HAND || !(world instanceof ServerWorld serverWorld)) {
-            return ActionResult.PASS;
+    private static InteractionResult onUseBlock(Player player, Level world, InteractionHand hand, BlockHitResult hitResult) {
+        if (world.isClientSide() || hand != InteractionHand.MAIN_HAND || !(world instanceof ServerLevel serverWorld)) {
+            return InteractionResult.PASS;
         }
 
         BlockPos pos = hitResult.getBlockPos();
         RewardState state = RewardState.get(serverWorld.getServer());
         ActiveRewardChest chest = state.getChestAt(pos);
         if (chest == null) {
-            return ActionResult.PASS;
+            return InteractionResult.PASS;
         }
 
-        if (!player.getUuid().equals(chest.ownerUuid())) {
-            player.sendMessage(DragonRewardsText.unauthorized(chest.ownerName()), false);
-            return ActionResult.FAIL;
+        if (!player.getUUID().equals(chest.ownerUuid())) {
+            ((ServerPlayer) player).sendSystemMessage(DragonRewardsText.unauthorized(chest.ownerName()), false);
+            return InteractionResult.FAIL;
         }
 
-        openRewardScreen(serverWorld, (ServerPlayerEntity) player, chest);
-        return ActionResult.SUCCESS;
+        openRewardScreen(serverWorld, (ServerPlayer) player, chest);
+        return InteractionResult.SUCCESS;
     }
 
-    private static void openRewardScreen(ServerWorld world, ServerPlayerEntity player, ActiveRewardChest chest) {
-        SimpleInventory inventory = new SimpleInventory(27);
+    private static void openRewardScreen(ServerLevel world, ServerPlayer player, ActiveRewardChest chest) {
+        SimpleContainer inventory = new SimpleContainer(27);
         int slot = 0;
         for (ItemStack stack : chest.rewards()) {
-            if (slot >= inventory.size()) {
+            if (slot >= inventory.getContainerSize()) {
                 break;
             }
-            inventory.setStack(slot++, stack.copy());
+            inventory.setItem(slot++, stack.copy());
         }
 
-        SimpleNamedScreenHandlerFactory factory = new SimpleNamedScreenHandlerFactory((syncId, playerInventory, opener) ->
-            new GenericContainerScreenHandler(ScreenHandlerType.GENERIC_9X3, syncId, playerInventory, inventory, 3) {
+        SimpleMenuProvider factory = new SimpleMenuProvider((syncId, playerInventory, opener) ->
+            new ChestMenu(MenuType.GENERIC_9x3, syncId, playerInventory, inventory, 3) {
                 @Override
-                public void onClosed(PlayerEntity closedBy) {
-                    super.onClosed(closedBy);
+                public void removed(Player closedBy) {
+                    super.removed(closedBy);
                     updateRewardsFromInventory(world, chest.chestPos(), inventory);
                 }
 
                 @Override
-                public boolean canUse(PlayerEntity user) {
-                    return user.getUuid().equals(chest.ownerUuid());
+                public boolean stillValid(Player user) {
+                    return user.getUUID().equals(chest.ownerUuid());
                 }
             },
-            DragonRewardsText.chestTitleWithTimer(chest.ownerName(), chest.expiresAtTick() - world.getTime())
+            DragonRewardsText.chestTitleWithTimer(chest.ownerName(), chest.expiresAtTick() - world.getGameTime())
         );
 
-        player.openHandledScreen(factory);
+        player.openMenu(factory);
     }
 
-    private static void updateRewardsFromInventory(ServerWorld world, BlockPos chestPos, SimpleInventory inventory) {
+    private static void updateRewardsFromInventory(ServerLevel world, BlockPos chestPos, SimpleContainer inventory) {
         RewardState state = RewardState.get(world.getServer());
         ActiveRewardChest existing = state.getChestAt(chestPos);
         if (existing == null) {
@@ -443,15 +440,15 @@ public final class DragonRewardManager {
         }
 
         List<ItemStack> remaining = new ArrayList<>();
-        for (int i = 0; i < inventory.size(); i++) {
-            ItemStack stack = inventory.getStack(i);
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
             if (!stack.isEmpty()) {
                 remaining.add(stack.copy());
             }
         }
 
         if (remaining.isEmpty()) {
-            ServerWorld rewardWorld = getRewardWorld(world.getServer());
+            ServerLevel rewardWorld = getRewardWorld(world.getServer());
             if (rewardWorld == null) {
                 rewardWorld = world;
             }
@@ -462,28 +459,24 @@ public final class DragonRewardManager {
         }
     }
 
-    private static boolean isManagedRewardChest(ServerWorld world, BlockPos pos) {
+    private static boolean isManagedRewardChest(ServerLevel world, BlockPos pos) {
         RewardState state = RewardState.get(world.getServer());
         return state.getChestAt(pos) != null;
     }
 
-    private static void clearVanillaChestInventory(ServerWorld world, BlockPos pos) {
-        if (!(world.getBlockEntity(pos) instanceof net.minecraft.block.entity.ChestBlockEntity chestBlockEntity)) {
+    private static void clearVanillaChestInventory(ServerLevel world, BlockPos pos) {
+        if (!(world.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chestBlockEntity)) {
             return;
         }
-        for (int i = 0; i < chestBlockEntity.size(); i++) {
-            chestBlockEntity.setStack(i, ItemStack.EMPTY);
+        for (int i = 0; i < chestBlockEntity.getContainerSize(); i++) {
+            chestBlockEntity.setItem(i, ItemStack.EMPTY);
         }
-        chestBlockEntity.markDirty();
+        chestBlockEntity.setChanged();
     }
 
-    private static UUID spawnNameMarker(ServerWorld world, BlockPos chestPos, String ownerName, long remainingTicks) {
-        ArmorStandEntity marker = EntityType.ARMOR_STAND.create(world, SpawnReason.EVENT);
-        if (marker == null) {
-            return null;
-        }
+    private static UUID spawnNameMarker(ServerLevel world, BlockPos chestPos, String ownerName, long remainingTicks) {
+        ArmorStand marker = new ArmorStand(world, chestPos.getX() + 0.5, chestPos.getY() + 1.35, chestPos.getZ() + 0.5);
 
-        marker.setPosition(chestPos.getX() + 0.5, chestPos.getY() + 1.35, chestPos.getZ() + 0.5);
         marker.setInvisible(true);
         marker.setNoGravity(true);
         marker.setCustomNameVisible(true);
@@ -491,15 +484,15 @@ public final class DragonRewardManager {
         marker.setInvulnerable(true);
         tagRewardMarker(marker);
 
-        world.spawnEntity(marker);
-        return marker.getUuid();
+        world.addFreshEntity(marker);
+        return marker.getUUID();
     }
 
     private static void onServerTick(MinecraftServer server) {
-        if ((server.getTicks() % 20) != 0) {
+        if ((server.getTickCount() % 20) != 0) {
             return;
         }
-        ServerWorld end = server.getWorld(World.END);
+        ServerLevel end = server.getLevel(Level.END);
         if (end == null) {
             return;
         }
@@ -509,19 +502,19 @@ public final class DragonRewardManager {
 
         List<ActiveRewardChest> snapshot = new ArrayList<>(state.getActiveChests());
         for (ActiveRewardChest chest : snapshot) {
-            long remaining = chest.expiresAtTick() - end.getTime();
+            long remaining = chest.expiresAtTick() - end.getGameTime();
             if (remaining <= 0) {
                 removeManagedChest(end, state, chest);
                 continue;
             }
 
-            if (!end.getBlockState(chest.chestPos()).isOf(Blocks.CHEST)) {
-                end.setBlockState(chest.chestPos(), Blocks.CHEST.getDefaultState(), Block.NOTIFY_ALL);
+            if (!end.getBlockState(chest.chestPos()).is(Blocks.CHEST)) {
+                end.setBlock(chest.chestPos(), Blocks.CHEST.defaultBlockState(), Block.UPDATE_ALL);
                 clearVanillaChestInventory(end, chest.chestPos());
             }
 
             Entity marker = chest.markerUuid() == null ? null : end.getEntity(chest.markerUuid());
-            if (marker instanceof ArmorStandEntity armorStand) {
+            if (marker instanceof ArmorStand armorStand) {
                 tagRewardMarker(armorStand);
                 armorStand.setCustomName(DragonRewardsText.chestTitleWithTimer(chest.ownerName(), remaining));
             } else {
@@ -529,13 +522,13 @@ public final class DragonRewardManager {
                 state.updateChest(chest.withMarker(newMarker));
             }
         }
-        if ((server.getTicks() % (20 * 20)) == 0) {
+        if ((server.getTickCount() % (20 * 20)) == 0) {
             cleanupOrphanRewardMarkers(end, state);
         }
     }
 
-    private static void processPendingSpawns(ServerWorld endWorld, RewardState state) {
-        long now = endWorld.getServer().getWorld(World.OVERWORLD).getTime();
+    private static void processPendingSpawns(ServerLevel endWorld, RewardState state) {
+        long now = endWorld.getServer().getLevel(Level.OVERWORLD).getGameTime();
         List<PendingRewardSpawn> snapshot = new ArrayList<>(state.getPendingSpawns());
         for (PendingRewardSpawn pending : snapshot) {
             if (pending.executeAtTick() > now) {
@@ -549,30 +542,30 @@ public final class DragonRewardManager {
         }
     }
 
-    private static void ownerNotifyChest(ServerWorld world, OwnerData owner, BlockPos chestPos, long minutes) {
-        ServerPlayerEntity player = world.getServer().getPlayerManager().getPlayer(owner.playerUuid());
+    private static void ownerNotifyChest(ServerLevel world, OwnerData owner, BlockPos chestPos, long minutes) {
+        ServerPlayer player = world.getServer().getPlayerList().getPlayer(owner.playerUuid());
         if (player == null) {
             return;
         }
         String message = "Your rewards chest spawned at X=" + chestPos.getX() + ", Y=" + chestPos.getY() + ", Z=" + chestPos.getZ()
             + ". You have " + minutes + " minutes to receive your rewards.";
-        player.sendMessage(DragonRewardsText.commandLine(message), false);
+        player.sendSystemMessage(DragonRewardsText.commandLine(message), false);
     }
 
-    private static void removeManagedChest(ServerWorld world, RewardState state, ActiveRewardChest chest) {
+    private static void removeManagedChest(ServerLevel world, RewardState state, ActiveRewardChest chest) {
         removeMarker(world, chest.markerUuid(), chest.chestPos());
         removeRewardBlock(world, chest.chestPos());
         state.removeChestAt(chest.chestPos());
     }
 
-    private static void removeRewardBlock(ServerWorld world, BlockPos pos) {
+    private static void removeRewardBlock(ServerLevel world, BlockPos pos) {
         BlockState state = world.getBlockState(pos);
-        if (state.isOf(Blocks.CHEST) || state.isOf(ModBlocks.REWARD_CHEST)) {
+        if (state.is(Blocks.CHEST) || state.is(ModBlocks.REWARD_CHEST)) {
             world.removeBlock(pos, false);
         }
     }
 
-    private static void removeMarker(ServerWorld world, UUID markerUuid, BlockPos chestPos) {
+    private static void removeMarker(ServerLevel world, UUID markerUuid, BlockPos chestPos) {
         if (markerUuid != null) {
             Entity entity = world.getEntity(markerUuid);
             if (entity != null) {
@@ -586,8 +579,8 @@ public final class DragonRewardManager {
         }
     }
 
-    private static void removeRewardMarkersNear(ServerWorld world, BlockPos chestPos) {
-        Box markerBox = new Box(
+    private static void removeRewardMarkersNear(ServerLevel world, BlockPos chestPos) {
+        AABB markerBox = new AABB(
             chestPos.getX() - 0.75D,
             chestPos.getY(),
             chestPos.getZ() - 0.75D,
@@ -595,12 +588,12 @@ public final class DragonRewardManager {
             chestPos.getY() + 3.25D,
             chestPos.getZ() + 1.75D
         );
-        for (ArmorStandEntity marker : world.getEntitiesByClass(ArmorStandEntity.class, markerBox, DragonRewardManager::isRewardMarker)) {
+        for (ArmorStand marker : world.getEntitiesOfClass(ArmorStand.class, markerBox, DragonRewardManager::isRewardMarker)) {
             marker.discard();
         }
     }
 
-    private static void cleanupOrphanRewardMarkers(ServerWorld world, RewardState state) {
+    private static void cleanupOrphanRewardMarkers(ServerLevel world, RewardState state) {
         Set<UUID> activeMarkerIds = new HashSet<>();
         for (ActiveRewardChest chest : state.getActiveChests()) {
             if (chest.markerUuid() != null) {
@@ -612,7 +605,7 @@ public final class DragonRewardManager {
         int centerX = DragonRewardsMod.CONFIG.chestSpawnCenterX;
         int centerZ = DragonRewardsMod.CONFIG.chestSpawnCenterZ;
         int fixedY = DragonRewardsMod.CONFIG.chestSpawnFixedY;
-        Box markerArea = new Box(
+        AABB markerArea = new AABB(
             centerX - radius,
             fixedY,
             centerZ - radius,
@@ -621,8 +614,8 @@ public final class DragonRewardManager {
             centerZ + radius + 1
         );
 
-        for (ArmorStandEntity marker : world.getEntitiesByClass(ArmorStandEntity.class, markerArea, DragonRewardManager::isRewardMarker)) {
-            if (activeMarkerIds.contains(marker.getUuid())) {
+        for (ArmorStand marker : world.getEntitiesOfClass(ArmorStand.class, markerArea, DragonRewardManager::isRewardMarker)) {
+            if (activeMarkerIds.contains(marker.getUUID())) {
                 tagRewardMarker(marker);
             } else {
                 marker.discard();
@@ -630,20 +623,20 @@ public final class DragonRewardManager {
         }
     }
 
-    private static boolean isRewardMarker(ArmorStandEntity marker) {
-        if (marker.getCommandTags().contains(REWARD_MARKER_TAG)) {
+    private static boolean isRewardMarker(ArmorStand marker) {
+        if (marker.entityTags().contains(REWARD_MARKER_TAG)) {
             return true;
         }
-        Text customName = marker.getCustomName();
+        Component customName = marker.getCustomName();
         return customName != null && customName.getString().contains("'s Rewards");
     }
 
-    private static void tagRewardMarker(ArmorStandEntity marker) {
-        marker.addCommandTag(REWARD_MARKER_TAG);
+    private static void tagRewardMarker(ArmorStand marker) {
+        marker.addTag(REWARD_MARKER_TAG);
     }
 
-    private static ServerWorld getRewardWorld(MinecraftServer server) {
-        return server.getWorld(World.END);
+    private static ServerLevel getRewardWorld(MinecraftServer server) {
+        return server.getLevel(Level.END);
     }
 
     private static void debug(MinecraftServer server, String message) {

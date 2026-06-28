@@ -2,33 +2,33 @@ package com.enderdragon.rewards;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.UUIDUtil;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.Uuids;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateManager;
-import net.minecraft.world.PersistentStateType;
-import net.minecraft.world.World;
-
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.world.level.storage.SavedDataStorage;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-public class RewardState extends PersistentState {
+public class RewardState extends SavedData {
     public static final String KEY = "dragonrewards_state";
 
     public static final Codec<RewardState> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Codec.DOUBLE.fieldOf("CurrentElytraChance").forGetter(state -> state.currentElytraChance),
         Codec.DOUBLE.fieldOf("CurrentDragonHeadChance").forGetter(state -> state.currentDragonHeadChance),
         ActiveRewardChest.CODEC.listOf().optionalFieldOf("ActiveChests", List.of()).forGetter(state -> new ArrayList<>(state.activeChests)),
-        Uuids.CODEC.listOf().optionalFieldOf("ProcessedDragonIds", List.of()).forGetter(state -> new ArrayList<>(state.processedDragonIds)),
+        UUIDUtil.AUTHLIB_CODEC.listOf().optionalFieldOf("ProcessedDragonIds", List.of()).forGetter(state -> new ArrayList<>(state.processedDragonIds)),
         PendingRewardSpawn.CODEC.listOf().optionalFieldOf("PendingSpawns", List.of()).forGetter(state -> new ArrayList<>(state.pendingSpawns))
     ).apply(instance, RewardState::fromCodec));
 
-    private static final PersistentStateType<RewardState> TYPE = new PersistentStateType<>(
-        KEY,
+    private static final SavedDataType<RewardState> TYPE = new SavedDataType<>(
+        Identifier.fromNamespaceAndPath(DragonRewardsMod.MOD_ID, KEY),
         RewardState::new,
         CODEC,
         null
@@ -58,8 +58,8 @@ public class RewardState extends PersistentState {
     }
 
     public static RewardState get(MinecraftServer server) {
-        PersistentStateManager manager = server.getWorld(World.OVERWORLD).getPersistentStateManager();
-        return manager.getOrCreate(TYPE);
+        SavedDataStorage manager = server.getLevel(Level.OVERWORLD).getDataStorage();
+        return manager.computeIfAbsent(TYPE);
     }
 
     public double getCurrentElytraChance() {
@@ -69,7 +69,7 @@ public class RewardState extends PersistentState {
     public void setCurrentElytraChance(double currentElytraChance) {
         this.currentElytraChance = currentElytraChance;
         sanitize();
-        markDirty();
+        setDirty();
     }
 
     public double getCurrentDragonHeadChance() {
@@ -79,7 +79,7 @@ public class RewardState extends PersistentState {
     public void setCurrentDragonHeadChance(double currentDragonHeadChance) {
         this.currentDragonHeadChance = currentDragonHeadChance;
         sanitize();
-        markDirty();
+        setDirty();
     }
 
     public List<ActiveRewardChest> getActiveChests() {
@@ -88,14 +88,14 @@ public class RewardState extends PersistentState {
 
     public void addChest(ActiveRewardChest chest) {
         this.activeChests.add(chest);
-        markDirty();
+        setDirty();
     }
 
     public void updateChest(ActiveRewardChest updated) {
         for (int i = 0; i < activeChests.size(); i++) {
             if (activeChests.get(i).chestPos().equals(updated.chestPos())) {
                 activeChests.set(i, updated);
-                markDirty();
+                setDirty();
                 return;
             }
         }
@@ -112,7 +112,7 @@ public class RewardState extends PersistentState {
 
     public void removeChestAt(BlockPos pos) {
         activeChests.removeIf(chest -> chest.chestPos().equals(pos));
-        markDirty();
+        setDirty();
     }
 
     public boolean isDragonProcessed(UUID dragonUuid) {
@@ -125,7 +125,7 @@ public class RewardState extends PersistentState {
             UUID oldest = processedDragonIds.iterator().next();
             processedDragonIds.remove(oldest);
         }
-        markDirty();
+        setDirty();
     }
 
     public int getProcessedDragonCount() {
@@ -134,7 +134,7 @@ public class RewardState extends PersistentState {
 
     public void clearProcessedDragons() {
         processedDragonIds.clear();
-        markDirty();
+        setDirty();
     }
 
     public List<PendingRewardSpawn> getPendingSpawns() {
@@ -143,12 +143,12 @@ public class RewardState extends PersistentState {
 
     public void addPendingSpawn(PendingRewardSpawn pending) {
         pendingSpawns.add(pending);
-        markDirty();
+        setDirty();
     }
 
     public void removePendingSpawn(PendingRewardSpawn pending) {
         pendingSpawns.remove(pending);
-        markDirty();
+        setDirty();
     }
 
     public void sanitize() {
