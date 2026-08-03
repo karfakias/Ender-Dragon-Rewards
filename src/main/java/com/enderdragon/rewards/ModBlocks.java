@@ -7,10 +7,9 @@ public final class ModBlocks {
     private ModBlocks() {
     }
 
-    // Server-only mode uses a vanilla chest to avoid any client-side content requirement.
+    // Keep this as a vanilla chest so players do not need a client-side mod.
     public static final Block REWARD_CHEST = Blocks.CHEST;
 
     public static void init() {
-        // No-op.
     }
 }

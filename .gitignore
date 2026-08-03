@@ -1,1 +1,13 @@
 .gradle/
+build/
+bin/
+run/
+out/
+
+.idea/
+.vscode/
+*.class
+
+fabricapi-metadata.xml
+loader-metadata.xml
+yarn-metadata.xml

@@ -275,8 +275,8 @@ public final class DiscordRewardEmbedSender {
     }
 
     private static String rewardText(boolean elytra, boolean dragonHead) {
-        String improvedText = improvedRewardChanceText(elytra, dragonHead);
-        String suffix = improvedText.isBlank() ? "" : "\n" + improvedText;
+        String pityText = pityChanceText(elytra, dragonHead);
+        String suffix = pityText.isBlank() ? "" : "\n" + pityText;
 
         if (elytra && dragonHead) {
             return "**Elytra** + **Dragon Head**" + suffix;
@@ -290,18 +290,18 @@ public final class DiscordRewardEmbedSender {
         return "**No rare reward**" + suffix;
     }
 
-    private static String improvedRewardChanceText(boolean elytraDropped, boolean dragonHeadDropped) {
+    private static String pityChanceText(boolean elytraDropped, boolean dragonHeadDropped) {
         boolean elytraImproved = DragonRewardsMod.CONFIG.enableElytraDrops && !elytraDropped;
         boolean dragonHeadImproved = DragonRewardsMod.CONFIG.enableDragonHeadDrops && !dragonHeadDropped;
 
         if (elytraImproved && dragonHeadImproved) {
-            return "Elytra and Dragon Head reward chances got better.";
+            return "Elytra and Dragon Head chances increased.";
         }
         if (elytraImproved) {
-            return "Elytra reward chance got better.";
+            return "Elytra chance increased.";
         }
         if (dragonHeadImproved) {
-            return "Dragon Head reward chance got better.";
+            return "Dragon Head chance increased.";
         }
         return "";
     }

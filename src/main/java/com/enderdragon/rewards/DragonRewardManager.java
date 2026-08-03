@@ -359,7 +359,7 @@ public final class DragonRewardManager {
             }
         }
 
-        // Guaranteed fallback within configured area, force-place at fixed Y.
+        // If every valid spot is blocked, use the first free slot in the search area.
         for (int ring = 0; ring <= radius; ring++) {
             for (int dx = -ring; dx <= ring; dx++) {
                 for (int dz = -ring; dz <= ring; dz++) {
