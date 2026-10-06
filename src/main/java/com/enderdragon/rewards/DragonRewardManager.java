@@ -26,7 +26,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -69,10 +68,13 @@ public final class DragonRewardManager {
     }
 
     private static void onEntityDeath(LivingEntity entity, DamageSource damageSource) {
-        if (!(entity instanceof EnderDragon dragon)) {
-            return;
+        if (entity instanceof EnderDragon dragon) {
+            onDragonDeath(dragon, damageSource);
         }
-        if (!(entity.level() instanceof ServerLevel world) || world.dimension() != Level.END) {
+    }
+
+    public static void onDragonDeath(EnderDragon dragon, DamageSource damageSource) {
+        if (!(dragon.level() instanceof ServerLevel world) || world.dimension() != Level.END) {
             return;
         }
 
@@ -82,45 +84,33 @@ public final class DragonRewardManager {
             debug(world.getServer(), "Skipped duplicate dragon death event for " + dragonUuid);
             return;
         }
-        state.markDragonProcessed(dragonUuid);
-
         OwnerData owner = resolveOwnerData(dragon, damageSource, world);
 
-        boolean rolledElytra = false;
-        boolean rolledHead = false;
         List<ItemStack> rewards = new ArrayList<>();
-
-        if (DragonRewardsMod.CONFIG.enableElytraDrops) {
-            rolledElytra = world.getRandom().nextDouble() < state.getCurrentElytraChance();
-            if (rolledElytra) {
-                rewards.add(new ItemStack(Items.ELYTRA));
-                state.setCurrentElytraChance(DragonRewardsMod.CONFIG.elytraBaseChance);
-            } else {
-                state.setCurrentElytraChance(Math.min(
-                    DragonRewardsMod.CONFIG.elytraMaxChance,
-                    state.getCurrentElytraChance() + DragonRewardsMod.CONFIG.elytraFailureIncrement
-                ));
+        List<RewardType> dropped = new ArrayList<>();
+        java.util.Map<RewardType, Double> nextChances = new java.util.EnumMap<>(RewardType.class);
+        for (RewardType reward : RewardType.values()) {
+            double chance = reward.currentChance(DragonRewardsMod.CONFIG, state);
+            boolean success = reward.rollsDrop(DragonRewardsMod.CONFIG, chance, world.getRandom().nextDouble());
+            if (success) {
+                rewards.add(reward.createStack(world.registryAccess(), DragonRewardsMod.CONFIG));
+                dropped.add(reward);
             }
-        }
-
-        if (DragonRewardsMod.CONFIG.enableDragonHeadDrops) {
-            rolledHead = world.getRandom().nextDouble() < state.getCurrentDragonHeadChance();
-            if (rolledHead) {
-                rewards.add(new ItemStack(Items.DRAGON_HEAD));
-                state.setCurrentDragonHeadChance(DragonRewardsMod.CONFIG.dragonHeadBaseChance);
-            } else {
-                state.setCurrentDragonHeadChance(Math.min(
-                    DragonRewardsMod.CONFIG.dragonHeadMaxChance,
-                    state.getCurrentDragonHeadChance() + DragonRewardsMod.CONFIG.dragonHeadFailureIncrement
-                ));
-            }
+            nextChances.put(reward, reward.nextChance(DragonRewardsMod.CONFIG, chance, success));
         }
 
         if (!rewards.isEmpty()) {
             queueDelayedChestSpawn(world, state, owner, rewards);
         }
 
-        broadcastOutcome(world.getServer(), owner.playerName(), rolledElytra, rolledHead, state);
+        // Commit only after owner resolution, item creation and queuing succeed. A failed attempt can retry.
+        nextChances.forEach((reward, chance) -> reward.updateState(state, chance));
+        state.markDragonProcessed(dragonUuid);
+        DragonRewardsMod.LOGGER.info("Processed dragon {} for {}: {}. Pending reward chests: {}.",
+            dragonUuid, owner.playerName(), dropped.isEmpty() ? "no drops" : dropped,
+            state.getPendingSpawns().size());
+
+        broadcastOutcome(world.getServer(), owner.playerName(), dropped);
     }
 
     private static void createRewardChest(ServerLevel world, RewardState state, BlockPos chestPos, OwnerData owner, List<ItemStack> rewards) {
@@ -137,7 +127,7 @@ public final class DragonRewardManager {
         }
         state.addChest(new ActiveRewardChest(owner.playerUuid(), owner.playerName(), chestPos, markerUuid, rewardCopies, expiresAtTick));
 
-        debug(world.getServer(), "Spawned reward chest for " + owner.playerName() + " at " + chestPos.toShortString());
+        DragonRewardsMod.LOGGER.info("Spawned reward chest for {} at {} in The End.", owner.playerName(), chestPos.toShortString());
         long minutes = DragonRewardsMod.CONFIG.rewardClaimTimeMinutes;
         ownerNotifyChest(world, owner, chestPos, minutes);
     }
@@ -154,21 +144,16 @@ public final class DragonRewardManager {
         state.addPendingSpawn(new PendingRewardSpawn(owner.playerUuid(), owner.playerName(), copies, executeAt));
     }
 
-    public static BlockPos spawnManualRewardChest(ServerLevel world, ServerPlayer owner, boolean includeElytra, boolean includeDragonHead) {
-        if (!includeElytra && !includeDragonHead) {
+    public static BlockPos spawnManualRewardChest(ServerLevel world, ServerPlayer owner, List<RewardType> selectedRewards) {
+        if (selectedRewards.isEmpty()) {
             return null;
         }
 
+        List<ItemStack> rewards = selectedRewards.stream()
+            .map(reward -> reward.createStack(world.registryAccess(), DragonRewardsMod.CONFIG))
+            .toList();
         RewardState state = RewardState.get(world.getServer());
         BlockPos chestPos = findChestSpawnPosition(world, state);
-        List<ItemStack> rewards = new ArrayList<>();
-        if (includeElytra) {
-            rewards.add(new ItemStack(Items.ELYTRA));
-        }
-        if (includeDragonHead) {
-            rewards.add(new ItemStack(Items.DRAGON_HEAD));
-        }
-
         OwnerData ownerData = new OwnerData(owner.getUUID(), owner.getName().getString());
         createRewardChest(world, state, chestPos, ownerData, rewards);
         return chestPos;
@@ -255,7 +240,7 @@ public final class DragonRewardManager {
         }
 
         if (uuid == null) {
-            Entity attacker = source.getEntity();
+            Entity attacker = source == null ? null : source.getEntity();
             if (attacker instanceof ServerPlayer serverPlayer) {
                 uuid = serverPlayer.getUUID();
                 name = serverPlayer.getName().getString();
@@ -279,25 +264,24 @@ public final class DragonRewardManager {
         return new OwnerData(uuid, name);
     }
 
-    private static void broadcastOutcome(MinecraftServer server, String playerName, boolean elytra, boolean dragonHead, RewardState state) {
-        String template;
+    private static void broadcastOutcome(MinecraftServer server, String playerName, List<RewardType> dropped) {
+        String template = dropped.isEmpty()
+            ? DragonRewardsMod.CONFIG.messages.nothingDropped
+            : DragonRewardsMod.CONFIG.messages.rewardsDropped;
         DragonRewardsText.OutcomeType type;
-        if (elytra && dragonHead) {
-            template = DragonRewardsMod.CONFIG.messages.bothDropped;
-            type = DragonRewardsText.OutcomeType.BOTH;
-        } else if (elytra) {
-            template = DragonRewardsMod.CONFIG.messages.onlyElytra;
+        if (dropped.isEmpty()) {
+            type = DragonRewardsText.OutcomeType.NOTHING;
+        } else if (dropped.size() == 1 && dropped.contains(RewardType.ELYTRA)) {
             type = DragonRewardsText.OutcomeType.ELYTRA;
-        } else if (dragonHead) {
-            template = DragonRewardsMod.CONFIG.messages.onlyDragonHead;
+        } else if (dropped.size() == 1 && dropped.contains(RewardType.DRAGON_HEAD)) {
             type = DragonRewardsText.OutcomeType.DRAGON_HEAD;
         } else {
-            template = DragonRewardsMod.CONFIG.messages.nothingDropped;
-            type = DragonRewardsText.OutcomeType.NOTHING;
+            type = DragonRewardsText.OutcomeType.BOTH;
         }
 
-        String rendered = template.replace("{player}", playerName);
-        DiscordRewardEmbedSender.Result embedResult = DiscordRewardEmbedSender.send(playerName, type, elytra, dragonHead);
+        String rewardNames = dropped.stream().map(RewardType::displayName).collect(java.util.stream.Collectors.joining(", "));
+        String rendered = template.replace("{player}", playerName).replace("{rewards}", rewardNames);
+        DiscordRewardEmbedSender.Result embedResult = DiscordRewardEmbedSender.send(playerName, dropped);
         if (embedResult == DiscordRewardEmbedSender.Result.UNAVAILABLE) {
             broadcastOutcomeThroughTellraw(server, rendered, type);
             return;
@@ -481,7 +465,7 @@ public final class DragonRewardManager {
         marker.setNoGravity(true);
         marker.setCustomNameVisible(true);
         marker.setCustomName(DragonRewardsText.chestTitleWithTimer(ownerName, remainingTicks));
-        marker.setInvulnerable(true);
+        marker.setPermanentlyInvulnerable(true);
         tagRewardMarker(marker);
 
         world.addFreshEntity(marker);

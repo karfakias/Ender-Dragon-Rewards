@@ -23,9 +23,15 @@ dependencies {
 
 processResources {
     inputs.property "version", project.version
+    inputs.property "minecraft_version", project.minecraft_version
+    inputs.property "loader_version", project.loader_version
+    inputs.property "fabric_version", project.fabric_version
 
     filesMatching("fabric.mod.json") {
-        expand "version": project.version
+        expand "version": project.version,
+            "minecraft_version": project.minecraft_version,
+            "loader_version": project.loader_version,
+            "fabric_version": project.fabric_version
     }
 }
 
@@ -38,6 +44,25 @@ java {
     sourceCompatibility = JavaVersion.VERSION_25
     targetCompatibility = JavaVersion.VERSION_25
 }
+
+sourceSets {
+    rewardCheck {
+        compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+tasks.register('rewardChecks', JavaExec) {
+    description = 'Checks reward rolls, config upgrades, commands and enchanted-book persistence.'
+    group = 'verification'
+    dependsOn rewardCheckClasses
+    classpath = sourceSets.rewardCheck.runtimeClasspath
+    mainClass = 'com.enderdragon.rewards.RewardChecks'
+    workingDir = layout.buildDirectory.dir('reward-checks').get().asFile
+    doFirst { workingDir.mkdirs() }
+}
+
+check.dependsOn rewardChecks
 
 jar {
     from("LICENSE") {

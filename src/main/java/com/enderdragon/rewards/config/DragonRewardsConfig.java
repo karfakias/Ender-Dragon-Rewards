@@ -15,6 +15,12 @@ public class DragonRewardsConfig {
 
     public boolean enableElytraDrops = true;
     public boolean enableDragonHeadDrops = true;
+    public boolean enableEgapDrops = true;
+    public boolean enableSwiftSneakDrops = true;
+
+    public double egapChance = 0.30;
+    public double swiftSneakChance = 0.05;
+    public int swiftSneakLevel = 3;
 
     public double elytraBaseChance = 0.10;
     public double elytraFailureIncrement = 0.05;
@@ -69,6 +75,9 @@ public class DragonRewardsConfig {
     }
 
     public void sanitize() {
+        egapChance = clamp01(egapChance);
+        swiftSneakChance = clamp01(swiftSneakChance);
+        swiftSneakLevel = Math.max(1, Math.min(3, swiftSneakLevel));
         elytraBaseChance = clamp01(elytraBaseChance);
         elytraFailureIncrement = clampNonNegative(elytraFailureIncrement);
         elytraMaxChance = clampRange(elytraMaxChance, elytraBaseChance, 1.0);
@@ -93,18 +102,20 @@ public class DragonRewardsConfig {
     }
 
     private static double clampNonNegative(double value) {
-        return Math.max(0.0, value);
+        return Double.isFinite(value) ? Math.max(0.0, value) : 0.0;
     }
 
     private static double clampRange(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
+        return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
     }
 
     public static class Messages {
         public String nothingDropped = "{player} killed the Ender Dragon but was unlucky. The chances for Elytra and Dragon Head have increased.";
+        // Legacy fields are preserved in existing configs; all successful drops use rewardsDropped.
         public String onlyElytra = "{player} killed the Ender Dragon and received an Elytra. Dragon Head drop chance has increased.";
         public String onlyDragonHead = "{player} killed the Ender Dragon and received a Dragon Head. Elytra drop chance has increased.";
         public String bothDropped = "{player} killed the Ender Dragon and received rare rewards.";
+        public String rewardsDropped = "{player} killed the Ender Dragon and received: {rewards}.";
         public String unauthorizedChest = "This reward chest belongs to {player}.";
     }
 }

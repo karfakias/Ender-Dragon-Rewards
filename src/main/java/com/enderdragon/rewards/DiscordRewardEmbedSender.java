@@ -19,7 +19,7 @@ public final class DiscordRewardEmbedSender {
     private DiscordRewardEmbedSender() {
     }
 
-    public static Result send(String playerName, DragonRewardsText.OutcomeType type, boolean elytra, boolean dragonHead) {
+    public static Result send(String playerName, List<RewardType> dropped) {
         try {
             ChannelResolution resolution = resolveDmccChannel();
             if (!resolution.available()) {
@@ -32,7 +32,7 @@ public final class DiscordRewardEmbedSender {
             }
 
             Object channel = resolution.channel();
-            Object embed = createEmbed(channel.getClass().getClassLoader(), playerName, type, elytra, dragonHead);
+            Object embed = createEmbed(channel.getClass().getClassLoader(), playerName, dropped);
             Object action = sendEmbed(channel, embed);
             invokeCompatible(action, "queue");
             debug("Sent Discord reward embed through " + resolution.source() + ".");
@@ -130,14 +130,14 @@ public final class DiscordRewardEmbedSender {
         return field.get(null);
     }
 
-    private static Object createEmbed(ClassLoader classLoader, String playerName, DragonRewardsText.OutcomeType type, boolean elytra, boolean dragonHead) throws ReflectiveOperationException {
+    private static Object createEmbed(ClassLoader classLoader, String playerName, List<RewardType> dropped) throws ReflectiveOperationException {
         Class<?> embedBuilderClass = findJdaClass(classLoader, "EmbedBuilder");
         Object builder = embedBuilderClass.getConstructor().newInstance();
 
         invokeCompatible(builder, "setColor", EMBED_PURPLE);
         invokeCompatible(builder, "setTitle", "Dragon Reward");
         invokeCompatible(builder, "setDescription", descriptionFor(playerName));
-        invokeCompatible(builder, "addField", "Reward", rewardText(elytra, dragonHead), false);
+        invokeCompatible(builder, "addField", "Reward", rewardText(dropped), false);
         invokeCompatible(builder, "setFooter", "Dragon Rewards", null);
         invokeCompatible(builder, "setTimestamp", OffsetDateTime.now());
         return invokeCompatible(builder, "build");
@@ -274,20 +274,12 @@ public final class DiscordRewardEmbedSender {
         return "**" + playerName + "** killed the Ender Dragon.";
     }
 
-    private static String rewardText(boolean elytra, boolean dragonHead) {
-        String pityText = pityChanceText(elytra, dragonHead);
-        String suffix = pityText.isBlank() ? "" : "\n" + pityText;
-
-        if (elytra && dragonHead) {
-            return "**Elytra** + **Dragon Head**" + suffix;
-        }
-        if (elytra) {
-            return "**Elytra**" + suffix;
-        }
-        if (dragonHead) {
-            return "**Dragon Head**" + suffix;
-        }
-        return "**No rare reward**" + suffix;
+    private static String rewardText(List<RewardType> dropped) {
+        String pityText = pityChanceText(dropped.contains(RewardType.ELYTRA), dropped.contains(RewardType.DRAGON_HEAD));
+        String rewards = dropped.isEmpty() ? "**No rare reward**" : dropped.stream()
+            .map(reward -> "**" + reward.displayName() + "**")
+            .collect(java.util.stream.Collectors.joining(" + "));
+        return rewards + (pityText.isBlank() ? "" : "\n" + pityText);
     }
 
     private static String pityChanceText(boolean elytraDropped, boolean dragonHeadDropped) {
