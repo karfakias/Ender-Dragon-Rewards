@@ -81,6 +81,12 @@ Requires Java 25. Run `./gradlew build` (Windows: `./gradlew.bat build`). The bu
 
 The 26.3 port uses the updated permanent-invulnerability API for chest name markers and retains the existing config and reward-state format. Its build tooling follows the [Fabric 26.3 migration guidance](https://www.fabricmc.net/2026/09/15/263.html).
 
+## Publishing to Modrinth
+
+The `Modrinth Publish` GitHub Actions workflow builds the mod, runs the reward checks, and uploads the regular JAR to Modrinth with Fabric API marked as required. Configure the repository Actions secret `MODRINTH_TOKEN` with a Modrinth token that has Create versions permission, and the repository variable `MODRINTH_ID` with `5YURhtLb`.
+
+Run it from **Actions → Modrinth Publish → Run workflow**, supplying release notes, or publish a GitHub release with a tag matching `mod_version` in `gradle.properties` (an optional `v` prefix is accepted). GitHub release notes become the Modrinth changelog. Use only one publishing method for each version to avoid uploading it twice. Ordinary commits and pushes do not publish a version.
+
 ## Updating and diagnosing missing rewards
 
 Stop the server before replacing the mod JAR, keep only one Dragon Rewards JAR in `mods`, then start the server again. `/dr reload` only reloads configuration; it cannot load a new JAR.
