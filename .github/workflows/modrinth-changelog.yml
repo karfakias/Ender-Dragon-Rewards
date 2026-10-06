@@ -1,0 +1,48 @@
+name: Update Modrinth release notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_id:
+        description: Modrinth version ID to update
+        required: true
+        type: string
+      changelog:
+        description: Updated release notes (Markdown)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Update and verify release notes
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MODRINTH_ID: ${{ vars.MODRINTH_ID }}
+          VERSION_ID: ${{ inputs.version_id }}
+          CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.parse
+          url = 'https://api.modrinth.com/v2/version/' + urllib.parse.quote(os.environ['VERSION_ID'], safe='')
+          headers = {'Authorization': os.environ['MODRINTH_TOKEN'], 'User-Agent': 'karfakias/Ender-Dragon-Rewards (GitHub Actions)'}
+          def read_version():
+              with urllib.request.urlopen(urllib.request.Request(url, headers=headers)) as response:
+                  return json.load(response)
+          version = read_version()
+          if version['project_id'] != os.environ['MODRINTH_ID']:
+              raise SystemExit('Version does not belong to the configured project.')
+          changelog = os.environ['CHANGELOG']
+          request = urllib.request.Request(url, data=json.dumps({'changelog': changelog}).encode(), headers={**headers, 'Content-Type': 'application/json'}, method='PATCH')
+          with urllib.request.urlopen(request) as response:
+              if response.status != 204:
+                  raise SystemExit('Unexpected update response.')
+          if read_version()['changelog'] != changelog:
+              raise SystemExit('Release notes verification failed.')
+          print('Release notes updated and verified.')
+          PY
